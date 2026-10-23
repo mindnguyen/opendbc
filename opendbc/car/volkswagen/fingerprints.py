@@ -411,6 +411,25 @@ FW_VERSIONS = {
       b'\xf1\x875WA980653D \xf1\x893405',
     ],
   },
+  CAR.VOLKSWAGEN_TERAMONT_X_MK1: {
+    (Ecu.engine, 0x7e0, None): [],
+    (Ecu.transmission, 0x7e1, None): [],
+    (Ecu.srs, 0x715, None): [],
+    (Ecu.eps, 0x712, None): [],
+    (Ecu.cornerRadar, 0x74e, None): [
+      b'\xf1\x872QD907686D \xf1\x890287',
+    ],
+    (Ecu.adas, 0x769, None): [
+      b'\xf1\x875WD907556D \xf1\x890314',
+    ],
+    (Ecu.parkingAdas, 0x70a, None): [],
+    (Ecu.fwdRadar, 0x757, None): [
+      b'\xf1\x875WA907572C \xf1\x890461',
+    ],
+    (Ecu.fwdCamera, 0x74f, None): [
+      b'\xf1\x875WD980653B \xf1\x893406',
+    ],
+  },
   CAR.VOLKSWAGEN_CADDY_MK5: {
     (Ecu.cornerRadar, 0x74e, None): [
       b'\xf1\x872Q0907686G \xf1\x890287',

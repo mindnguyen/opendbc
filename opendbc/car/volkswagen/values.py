@@ -418,6 +418,15 @@ class CAR(Platforms):
     chassis_codes={"CA"},
     wmis={WMI.VOLKSWAGEN_USA_SUV, WMI.VOLKSWAGEN_EUROPE_SUV},
   )
+  VOLKSWAGEN_TERAMONT_X_MK1 = VolkswagenMQBevoPlatformConfig(
+    # 2023+ facelift Teramont X (SAIC Volkswagen, China) moved to MQB Evo electronics
+    # (GW2020 gateway, BCM37w, FCM2020, DQ501) while keeping the Atlas-size chassis.
+    [VWCarDocs("Volkswagen Teramont X 2023-25")],
+    VolkswagenCarSpecs(wheelbase=2.98),
+    chassis_codes={"CA"},
+    wmis={WMI.SAIC_VOLKSWAGEN},
+    model_years={"P", "R", "S"},
+  )
   VOLKSWAGEN_CADDY_MK3 = VolkswagenPQPlatformConfig(
     [
       VWCarDocs("Volkswagen Caddy 2019"),

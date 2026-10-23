@@ -125,12 +125,16 @@ class TestVolkswagenPlatformConfigs(unittest.TestCase):
 
               # Check a few FW cases - expected, unexpected
               for radar_fw in random.sample(all_radar_fw, 5) + [b'\xf1\x875Q0907572G \xf1\x890571', b'\xf1\x877H9907572AA\xf1\x890396']:
-                should_match = ((wmi in platform.config.wmis and chassis_code in platform.config.chassis_codes) and
-                                (not platform.config.model_years or model_year in platform.config.model_years) and
-                                radar_fw in all_radar_fw)
+                # Platforms may share a chassis code across different WMIs (e.g. US Atlas vs. China Teramont X),
+                # so compute the expected set over every platform rather than just the one under test
+                expected_matches = set()
+                if radar_fw in all_radar_fw:
+                  for p in CAR:
+                    if (wmi in p.config.wmis and chassis_code in p.config.chassis_codes and
+                        (not p.config.model_years or model_year in p.config.model_years)):
+                      expected_matches.add(p)
 
                 live_fws = {(0x757, None): [radar_fw]}
                 matches = FW_QUERY_CONFIG.match_fw_to_car_fuzzy(live_fws, vin, FW_VERSIONS)
 
-                expected_matches = {platform} if should_match else set()
                 assert expected_matches == matches, "Bad match"
