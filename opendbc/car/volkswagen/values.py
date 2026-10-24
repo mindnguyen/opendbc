@@ -116,6 +116,10 @@ class CarControllerParams:
                                                                DT_CTRL * self.HCA_STATUS_WATCHDOG_ALLOWED_FLUCTUATIONS_PER_SECOND)
       self.STEER_DRIVER_ALLOWANCE  = 60    # Driver torque 0.6 Nm, begin steering reduction from MAX
       self.STEER_DRIVER_SLIGHT_PRESS = 15  # Driver torque 0.15 Nm for slight steering override detection
+      if CP.carFingerprint == "VOLKSWAGEN_TERAMONT_X_MK1":
+        # Teramont X EPS reports ~0.08 Nm with hands off and ~0.18 Nm with hands resting, which kept the
+        # 0.15 Nm slight-override flag set almost continuously and froze the PID. Raise to 0.30 Nm.
+        self.STEER_DRIVER_SLIGHT_PRESS = 30
       self.STEER_DRIVER_MAX        = 300   # Driver torque 3.0 Nm, stop steering reduction at MIN
       self.STEERING_POWER_MAX      = 50    # HCA_03 maximum steering power, percentage
       self.STEERING_POWER_MIN      = 4     # HCA_03 minimum steering power, percentage
@@ -422,7 +426,8 @@ class CAR(Platforms):
     # 2023+ facelift Teramont X (SAIC Volkswagen, China) moved to MQB Evo electronics
     # (GW2020 gateway, BCM37w, FCM2020, DQ501) while keeping the Atlas-size chassis.
     [VWCarDocs("Volkswagen Teramont X 2023-25")],
-    VolkswagenCarSpecs(wheelbase=2.98),
+    # steerRatio learned by paramsd over several engaged drives (16.5-16.7), VW default 15.6 under-steers
+    VolkswagenCarSpecs(wheelbase=2.98, steerRatio=16.6),
     chassis_codes={"CA"},
     wmis={WMI.SAIC_VOLKSWAGEN},
     model_years={"P", "R", "S"},
