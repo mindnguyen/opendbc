@@ -129,8 +129,8 @@ class CarControllerParams:
       if CP.carFingerprint == "VOLKSWAGEN_TERAMONT_X_MK1":
         # Comfort tuning for a heavy 3-row SUV: lane changes were ramping curvature at the default ~3.6-5 m/s^3
         # lateral jerk limit (measured 2026-10-28, lat accel only 0.3-0.8 m/s^2), which passengers feel as a jolt.
-        # 2.5 m/s^3 keeps curve entry responsive while smoothing lane changes and corrections.
-        self.CURVATURE_LIMITS = CurvatureSteeringLimits(self.CURVATURE_MAX, MAX_LATERAL_JERK=2.5)
+        # 1.5 m/s^3 (user preference, was 2.5): very smooth lane changes; watch curve entry at speed.
+        self.CURVATURE_LIMITS = CurvatureSteeringLimits(self.CURVATURE_MAX, MAX_LATERAL_JERK=1.5)
       else:
         self.CURVATURE_LIMITS = CurvatureSteeringLimits(self.CURVATURE_MAX)
 
