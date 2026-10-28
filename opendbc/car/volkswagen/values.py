@@ -126,7 +126,13 @@ class CarControllerParams:
       self.STEERING_POWER_STEP     = 2     # HCA_03 steering power counter steps
       
       self.CURVATURE_MAX = 0.195          # Max curvature for steering command, m^-1
-      self.CURVATURE_LIMITS = CurvatureSteeringLimits(self.CURVATURE_MAX)
+      if CP.carFingerprint == "VOLKSWAGEN_TERAMONT_X_MK1":
+        # Comfort tuning for a heavy 3-row SUV: lane changes were ramping curvature at the default ~3.6-5 m/s^3
+        # lateral jerk limit (measured 2026-10-28, lat accel only 0.3-0.8 m/s^2), which passengers feel as a jolt.
+        # 2.5 m/s^3 keeps curve entry responsive while smoothing lane changes and corrections.
+        self.CURVATURE_LIMITS = CurvatureSteeringLimits(self.CURVATURE_MAX, MAX_LATERAL_JERK=2.5)
+      else:
+        self.CURVATURE_LIMITS = CurvatureSteeringLimits(self.CURVATURE_MAX)
 
       # Longitudinal constants
       self.ACCEL_INACTIVE = 3.01  # m/s^2
