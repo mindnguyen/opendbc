@@ -18,6 +18,9 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
   def __init__(self, CP, CP_SP):
     super().__init__(CP, CP_SP)
     self.CCS = pqcan if CP.flags & VolkswagenFlags.PQ else (mebcan if CP.flags & VolkswagenFlags.MEB else mqbcan)
+    # MQB Evo steering-wheel buttons have dedicated +/- tips; RES/SET would not step the set speed (logged 2026-10-30)
+    self.tip_buttons = bool(CP.flags & VolkswagenFlags.MQB_EVO) and self.CCS is mqbcan
+    self.press_start_frame = -1000
 
   def update(self, CC_SP, CS, packer, frame, CAN) -> list[CanData]:
     can_sends = []
@@ -31,7 +34,16 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     # set and resume buttons are used to achieve +1 and -1 button presses
     # make sure cruise state is already enabled to not enable car cruise user unintended
     if CS.out.cruiseState.enabled and (up or down):
-      if (self.frame - self.last_button_frame) * DT_CTRL > 0.2:
+      if self.tip_buttons:
+        # hold the tip for ~90 ms (about 3 stock frames) so the car registers it, one tap every 250 ms
+        t = (self.frame - self.press_start_frame) * DT_CTRL
+        if t > 0.25:
+          self.press_start_frame = self.frame
+          t = 0.0
+        if t < 0.09:
+          can_sends.append(self.CCS.create_acc_buttons_control(packer, CAN, CS.gra_stock_values, up=up, down=down, tip_buttons=True))
+          self.last_button_frame = self.frame
+      elif (self.frame - self.last_button_frame) * DT_CTRL > 0.2:
         can_sends.append(self.CCS.create_acc_buttons_control(packer, CAN, CS.gra_stock_values, up=up, down=down))
         self.last_button_frame = self.frame
     

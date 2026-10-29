@@ -52,7 +52,7 @@ def create_lka_hud_control(packer, bus, ldw_stock_values, lat_active, steering_p
   return packer.make_can_msg("LDW_02", bus, values)
 
 
-def create_acc_buttons_control(packer, bus, gra_stock_values, cancel=False, resume=False, up=False, down=False):
+def create_acc_buttons_control(packer, bus, gra_stock_values, cancel=False, resume=False, up=False, down=False, tip_buttons=False):
   values = {s: gra_stock_values[s] for s in [
     "GRA_Hauptschalter",           # ACC button, on/off
     "GRA_Typ_Hauptschalter",       # ACC main button type
@@ -64,9 +64,13 @@ def create_acc_buttons_control(packer, bus, gra_stock_values, cancel=False, resu
   values.update({
     "COUNTER": (gra_stock_values["COUNTER"] + 1) % 16,
     "GRA_Abbrechen": cancel,
-    "GRA_Tip_Wiederaufnahme": resume or up,
-    "GRA_Tip_Setzen": down,
   })
+  if tip_buttons:
+    # Steering-wheel +/- buttons (MQB Evo, e.g. Teramont X): while ACC is active RES only resumes and SET only
+    # re-sets the current speed, so +1/-1 steps must use the dedicated up/down tips.
+    values.update({"GRA_Tip_Wiederaufnahme": resume, "GRA_Tip_Hoch": up, "GRA_Tip_Runter": down})
+  else:
+    values.update({"GRA_Tip_Wiederaufnahme": resume or up, "GRA_Tip_Setzen": down})
 
   return packer.make_can_msg("GRA_ACC_01", bus, values)
 
