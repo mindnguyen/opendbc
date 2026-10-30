@@ -33,8 +33,16 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
 
     # set and resume buttons are used to achieve +1 and -1 button presses
     # make sure cruise state is already enabled to not enable car cruise user unintended
+    # NOTE: the VW CarController calls this method with itself as `self`, so state must not rely on __init__
+    tip_buttons = getattr(self, "tip_buttons", None)
+    if tip_buttons is None:
+      tip_buttons = bool(self.CP.flags & VolkswagenFlags.MQB_EVO) and self.CCS is mqbcan
+      self.tip_buttons = tip_buttons
+    if not hasattr(self, "press_start_frame"):
+      self.press_start_frame = -1000
+
     if CS.out.cruiseState.enabled and (up or down):
-      if self.tip_buttons:
+      if tip_buttons:
         # hold the tip for ~90 ms (about 3 stock frames) so the car registers it, one tap every 250 ms
         t = (self.frame - self.press_start_frame) * DT_CTRL
         if t > 0.25:
