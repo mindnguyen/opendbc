@@ -281,7 +281,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         acc_hud_event = self.CCS.get_acc_hud_event(acc_hud_status, CS.esp_hold_confirmation, sl_predicative_active, CS.speed_limit_predicative_type, sl_active)
           
         can_sends.append(self.CCS.create_acc_hud_control(self.packer_pt, self.CAN.pt, acc_hud_status, hud_control.setSpeed * CV.MS_TO_KPH,
-                                                         hud_control.leadVisible, hud_control.leadDistanceBars + 1, show_distance_bars,
+                                                         hud_control.leadVisible, hud_control.leadDistanceBars, show_distance_bars,  # 1..5, one cluster bar per following distance
                                                          CS.esp_hold_confirmation, distance, gap, fcw_alert, acc_hud_event, speed_limit))
 
       else:
