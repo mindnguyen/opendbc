@@ -17,6 +17,7 @@
 #define MSG_EA_02            0x1F0U   // TX, for EA mitigation
 #define MSG_KLR_01           0x25DU   // TX, for capacitive steering wheel
 #define MSG_ESP_21           0xFDU    // RX, redundant vehicle speed source
+#define MSG_SMLS_01          0x3D4U   // RX, steering column stalks, driver assistance button used as MADS button
 #define MSG_DIAGNOSTIC       0x700U   // TX, for general tester present on bus for radar disable
 #define MSG_AWV_03           0xDBU    // TX, radar AEB control message replacement
 #define MSG_MEB_AWV_01       0x16A954ADU   // TX, radar AEB HUD message replacement
@@ -39,6 +40,7 @@
   {.msg = {{MSG_GRA_ACC_01, 0, 8, 33U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}}, \
   {.msg = {{MSG_QFK_01, 0, 32, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},    \
   {.msg = {{MSG_ESP_21, 0, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},    \
+  {.msg = {{MSG_SMLS_01, 0, 8, 1U, .max_counter = 15U, .ignore_frequency_check = true, .ignore_quality_flag = true}, { 0 }, { 0 }}}, \
   
 #define VW_MEB_RX_CHECKS                                                                            \
   {.msg = {{MSG_Motor_51, 0, 32, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
@@ -96,6 +98,9 @@ static uint32_t volkswagen_meb_compute_crc(const CANPacket_t *msg) {
     crc ^= (uint8_t[]){0x2F,0x3C,0x22,0x60,0x18,0xEB,0x63,0x76,0xC5,0x91,0x0F,0x27,0x34,0x04,0x7F,0x02}[counter];
   } else if (msg->addr == MSG_AWV_03) {
     crc ^= (uint8_t[]){0x09,0xFA,0xCA,0x8E,0x62,0xD5,0xD1,0xF0,0x31,0xA0,0xAF,0xDA,0x4D,0x1A,0x0A,0x97}[counter];
+  } else if (msg->addr == MSG_SMLS_01) {
+    // derived from 6910 logged frames of a 2023 Teramont X (MQB Evo), every counter value consistent
+    crc ^= (uint8_t[]){0xC3,0x79,0xBF,0xDB,0xE9,0x11,0x46,0x86,0x69,0xB6,0x9B,0x29,0x15,0x9C,0x45,0x0D}[counter];
   } else {
     // Undefined CAN message, CRC check expected to fail
   }
@@ -316,6 +321,17 @@ static void volkswagen_meb_rx_hook(const CANPacket_t *msg) {
     // update brake pedal
     if (msg->addr == MSG_MOTOR_14) {
       brake_pressed = GET_BIT(msg, 28U);
+    }
+
+    // MADS button: the driver assistance button on the turn signal stalk. openpilot toggles MADS on this
+    // button (sunnypilot/car/volkswagen/mads.py), so the panda has to see it too, otherwise lateral
+    // control requested with it is blocked here and ends in a lateral controls mismatch.
+    // Sent at 1 Hz and immediately on every change.
+    // Signal: SMLS_01.FAS_Taster
+    // Signal: SMLS_01.FAS_Taster_Fehler
+    if (msg->addr == MSG_SMLS_01) {
+      bool fas_button = GET_BIT(msg, 27U) && !GET_BIT(msg, 28U);
+      mads_button_press = fas_button ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
     }
 
     // update accel pedal

@@ -3,7 +3,9 @@ import numpy as np
 import unittest
 
 from opendbc.car.structs import CarParams
+from opendbc.car.volkswagen.mqbcan import volkswagen_mqb_meb_checksum
 from opendbc.car.volkswagen.values import VolkswagenSafetyFlags
+from opendbc.safety.tests.libsafety import libsafety_py
 import opendbc.safety.tests.common as common
 
 MAX_ACCEL = 2.0
@@ -37,6 +39,13 @@ MSG_MOTOR_14   = 0x3BE
 MSG_EA_01      = 0x1A4
 MSG_EA_02      = 0x1F0
 MSG_MEB_ACC_01 = MSG_ACC_19
+# sunnypilot: steering column stalks, the driver assistance button is the MADS button
+MSG_SMLS_01    = 0x3D4
+# CRC constants of SMLS_01, derived from logged frames of a 2023 Teramont X (MQB Evo)
+SMLS_01_CRC_CONST = [0xC3, 0x79, 0xBF, 0xDB, 0xE9, 0x11, 0x46, 0x86, 0x69, 0xB6, 0x9B, 0x29, 0x15, 0x9C, 0x45, 0x0D]
+# frames logged on the car: button pressed, then released
+SMLS_01_REAL_PRESSED = bytes.fromhex("e0068008000a0000")
+SMLS_01_REAL_RELEASED = bytes.fromhex("d1088000000a0000")
 
 
 class TestVolkswagenMebSafetyBase(common.CarSafetyTest, common.CurvatureSteeringSafetyTest):
@@ -52,6 +61,7 @@ class TestVolkswagenMebSafetyBase(common.CarSafetyTest, common.CurvatureSteering
   LATERAL_FREQUENCY = 50  # Hz
 
   cnt_curvature_cmd = 0
+  cnt_smls = 0
 
   def _set_prev_desired_power(self, power: int):
     # init with local tx sequence
@@ -172,6 +182,130 @@ class TestVolkswagenMebSafetyBase(common.CarSafetyTest, common.CurvatureSteering
   def _button_msg(self, cancel=0, resume=0, _set=0, bus=2):
     values = {"GRA_Abbrechen": cancel, "GRA_Tip_Setzen": _set, "GRA_Tip_Wiederaufnahme": resume}
     return self.packer.make_can_msg_safety("GRA_ACC_01", bus, values)
+
+  def _smls_msg(self, pressed, fault=False, bus=0, valid_checksum=True):
+    # SMLS_01 has no CHECKSUM/COUNTER named signals in the DBC, so the frame is built by hand
+    # on top of the idle payload the car sends
+    dat = bytearray(SMLS_01_REAL_RELEASED)
+    dat[1] = self.__class__.cnt_smls & 0xF
+    self.__class__.cnt_smls += 1
+    dat[3] = (0x08 if pressed else 0x00) | (0x10 if fault else 0x00)  # FAS_Taster, FAS_Taster_Fehler
+    dat[0] = volkswagen_mqb_meb_checksum(MSG_SMLS_01, None, dat, SMLS_01_CRC_CONST)
+    if not valid_checksum:
+      dat[0] ^= 0xFF
+    return libsafety_py.make_CANPacket(MSG_SMLS_01, bus, bytes(dat))
+
+  def _lkas_button_msg(self, enabled):
+    return self._smls_msg(enabled)
+
+  def _acc_state_msg(self, enabled):
+    return self._tsk_status_msg(False, main_switch=enabled)
+
+  def test_mads_button_real_frames(self):
+    # frames captured on the car must pass the checksum and counter checks and toggle the button state
+    self.safety.set_mads_params(True, False, False)
+    self.assertTrue(self._rx(libsafety_py.make_CANPacket(MSG_SMLS_01, 0, SMLS_01_REAL_RELEASED)))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+    self.assertTrue(self._rx(libsafety_py.make_CANPacket(MSG_SMLS_01, 0, SMLS_01_REAL_PRESSED)))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.assertTrue(self._rx(libsafety_py.make_CANPacket(MSG_SMLS_01, 0, SMLS_01_REAL_RELEASED)))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_button_checksum_matches_real_frames(self):
+    for dat in (SMLS_01_REAL_PRESSED, SMLS_01_REAL_RELEASED):
+      self.assertEqual(dat[0], volkswagen_mqb_meb_checksum(MSG_SMLS_01, None, bytearray(dat), SMLS_01_CRC_CONST))
+
+  def test_mads_button_does_not_allow_longitudinal(self):
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._tsk_status_msg(False, main_switch=True))
+    self._rx(self._smls_msg(True))
+    self._rx(self._smls_msg(False))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_mads_button_needs_mads_enabled(self):
+    self.safety.set_mads_params(False, False, False)
+    self._rx(self._smls_msg(True))
+    self._rx(self._smls_msg(False))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_button_fault_bit_ignored(self):
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._smls_msg(False))
+    self._rx(self._smls_msg(True, fault=True))
+    self._rx(self._smls_msg(False))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_button_bad_checksum_ignored(self):
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._smls_msg(False))
+    self.assertFalse(self._rx(self._smls_msg(True, valid_checksum=False)))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_button_wrong_bus_ignored(self):
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._smls_msg(False))
+    self._rx(self._smls_msg(True, bus=2))
+    self._rx(self._smls_msg(False, bus=2))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_button_held_is_one_request(self):
+    # the car repeats the pressed frame while the button is held: only the first one is an edge
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._smls_msg(False))
+    self._rx(self._smls_msg(True))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.safety.set_controls_allowed_lateral(False)
+    self._rx(self._smls_msg(True))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+    self._rx(self._smls_msg(False))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_mads_button_then_heartbeat_mismatch(self):
+    # openpilot did not follow the button (or was switched off with it): lateral permission is dropped again
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._smls_msg(True))
+    self._rx(self._smls_msg(False))
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.safety.set_heartbeat_engaged_mads(False)
+    for _ in range(3):
+      self.safety.mads_heartbeat_engaged_check()
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+    # no stale request re-enables it on the next message
+    self._rx(self._smls_msg(False))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_smls_1hz_rx_check(self):
+    checked_messages = ("LH_EPS_03", "Motor_14", "GRA_ACC_01", "QFK_01", "ESP_21", "Motor_51", "ESC_51")
+    def feed(smls, counter=0):
+      for name in checked_messages:
+        self.assertTrue(self._rx(self.packer.make_can_msg_safety(name, 0, {})))
+      self._rx(self._aeb_msg(False, counter=counter % 16))  # only checked with the radar, counter has to move
+      if smls:
+        self.assertTrue(self._rx(self._smls_msg(False)))
+
+    # SMLS_01 is a 1 Hz message: it must not fail the generic 10 Hz minimum
+    feed(True)
+    self.safety.set_timer(1_000_000)
+    self.safety.set_controls_allowed(True)
+    self.safety.safety_tick()
+    self.assertTrue(self.safety.get_controls_allowed())
+    self.assertTrue(self.safety.safety_config_valid())
+
+    # still fine when it keeps coming once a second
+    for t in range(2, 13):
+      self.safety.set_timer(t * 1_000_000)
+      feed(True, t)
+      self.safety.set_controls_allowed(True)
+      self.safety.safety_tick()
+      self.assertTrue(self.safety.get_controls_allowed(), t)
+
+    # missing for more than 10 s: controls are dropped, like every other checked message
+    self.safety.set_timer(23_000_001)
+    feed(False, 13)
+    self.safety.set_controls_allowed(True)
+    self.safety.safety_tick()
+    self.assertFalse(self.safety.get_controls_allowed())
 
   def test_curvature_measurements(self):
     self._rx(self._curvature_meas_msg(0.15))
@@ -320,6 +454,7 @@ class TestVolkswagenMebLongSafety(TestVolkswagenMebSafetyBase):
     checked_messages = ("LH_EPS_03", "Motor_14", "GRA_ACC_01", "QFK_01", "ESP_21", "Motor_51", "ESC_51")
     for name in checked_messages:
       self.assertTrue(self._rx(self.packer.make_can_msg_safety(name, 0, {})))
+    self.assertTrue(self._rx(self._smls_msg(False)))
     self.assertTrue(self._rx(self._aeb_msg(False)))
 
     # AWV_03 is a 1 Hz safety message: it must not fail the generic 10 Hz minimum.
@@ -333,6 +468,7 @@ class TestVolkswagenMebLongSafety(TestVolkswagenMebSafetyBase):
     self.safety.set_timer(11_000_001)
     for name in checked_messages:
       self.assertTrue(self._rx(self.packer.make_can_msg_safety(name, 0, {})))
+    self.assertTrue(self._rx(self._smls_msg(False)))
     self.safety.set_controls_allowed(True)
     self.safety.safety_tick()
     self.assertFalse(self.safety.get_controls_allowed())
